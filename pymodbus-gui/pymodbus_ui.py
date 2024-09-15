@@ -6,24 +6,44 @@ from time import sleep
 from pymodbus.client import ModbusTcpClient
 from pymodbus.exceptions import ConnectionException
 
-from var_table import VarTable
+from var_table import VarTable, ReadDataBlock
 from main_window import Ui_MainWindow
 
 class Worker(QObject):
     finished = pyqtSignal()
-    progress = pyqtSignal(list)
-    client = ModbusTcpClient('192.168.138.146', port=5020)
+    progress = pyqtSignal(ReadDataBlock)
+    
+    
+    def __init__(self, parent: QObject | None = None, address: str = 'localhost', port: int = 5020, readDataBlock: ReadDataBlock = ReadDataBlock()) -> None:
+        super().__init__(parent)
+        self.client = ModbusTcpClient(address, port)
+        self.readDataBlock = readDataBlock
 
     def run(self):
         try:
             """Long-running task."""
-            for i in range(1800):
+            self.client.connect()
+            while True:
                 sleep(1)
-                result = self.client.read_holding_registers(address=0, count=10)
-                self.progress.emit(result.registers)
-            self.client.close()
-            self.finished.emit()
+                if self.readDataBlock.coils['length'] > 0:
+                    result = self.client.read_coils(address=self.readDataBlock.coils['address'][0], count=self.readDataBlock.coils['length'])
+                    self.readDataBlock.coils['return'] = result.bits
+                if self.readDataBlock.discrete_inputs['length'] > 0:
+                    result = self.client.read_discrete_inputs(address=self.readDataBlock.discrete_inputs['address'][0], count=self.readDataBlock.discrete_inputs['length'])
+                    self.readDataBlock.discrete_inputs['return'] = result.bits
+                if self.readDataBlock.hold_registers['length'] > 0:
+                    result = self.client.read_holding_registers(address=self.readDataBlock.hold_registers['address'][0], count=self.readDataBlock.hold_registers['length'])
+                    self.readDataBlock.hold_registers['return'] = result.registers
+                if self.readDataBlock.input_registers['length'] > 0:
+                    result = self.client.read_input_registers(address=self.readDataBlock.input_registers['address'][0], count=self.readDataBlock.input_registers['length'])
+                    self.readDataBlock.input_registers['return'] = result.registers
+                
+                self.progress.emit(self.readDataBlock)
+
         except: ConnectionException
+
+        self.client.close()
+        self.finished.emit()
 
 class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
@@ -40,20 +60,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.addBtn.clicked.connect(self.dataTable.addRow)
         self.removeBtn.clicked.connect(self.dataTable.removeRow)
 
-        self.connectBtn.clicked.connect(self.test)
+        self.connectBtn.clicked.connect(self.runLongTask)
     
     def test(self):
         print(str(self.dataTable.model().getReadData()))
 
-    def updateValues(self, values):
-        index = self.dataTable.model().createIndex(0, 5)
-        self.dataTable.model().setData(index, values[0])
-
     def runLongTask(self):
+        self.test()
         # Step 2: Create a QThread object
         self.thread = QThread()
         # Step 3: Create a worker object
-        self.worker = Worker()
+        self.worker = Worker(readDataBlock = self.dataTable.model().getReadData())
         # Step 4: Move worker to the thread
         self.worker.moveToThread(self.thread)
         # Step 5: Connect signals and slots
@@ -61,7 +78,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.worker.finished.connect(self.thread.quit)
         self.worker.finished.connect(self.worker.deleteLater)
         self.thread.finished.connect(self.thread.deleteLater)
-        self.worker.progress.connect(self.updateValues)
+        self.worker.progress.connect(self.dataTable.model().updateReadData)
         # Step 6: Start the thread
         self.thread.start()
      
@@ -69,7 +86,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
-    window.runLongTask()
+    #window.runLongTask()
     #window.update_cell(0, 1, "Updated Value")
 
 

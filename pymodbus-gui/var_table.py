@@ -6,12 +6,14 @@ import sys
 
 MAX_READ_LEN = 100
  
+# Modbus blocks types 
 class ModbusBlock(StrEnum):
     COIL    = 'coil'
     H_REG   = 'hold. reg'
     I_DISC  = 'disc. in'
     I_REG   = 'in. reg'
 
+# Modbus variable types
 class VarType(StrEnum):
     BOOL    = 'bool'
     INT16   = 'int16'
@@ -19,6 +21,7 @@ class VarType(StrEnum):
     FLOAT_IEEE  = 'float IEEE'
     FLOAT_S7    = 'float S7'
 
+# Data block reading
 class ReadDataBlock():
     def __init__(self) -> None:
         self.coils           = {'address' : [], 'length' :0, 'return': []}
@@ -75,6 +78,15 @@ class TableModel(QAbstractTableModel):
         return False
     
     def flags(self, index):
+        """
+        Return the item flags for the given index.
+
+        The flags are used by the View to determine the item's appearance and
+        behavior. The base flags are those of a normal table item.
+
+        If the column is not the Modify column (5), the item is also editable.
+        """
+        
         if index.column() !=  5:
             return super().flags(index) | Qt.ItemFlag.ItemIsEditable
         return super().flags(index)
@@ -87,6 +99,14 @@ class TableModel(QAbstractTableModel):
                 return f"Row {section + 1}"
     
     def insertRows(self, position, rows, parent=QModelIndex()):
+        """
+        Insert a row into the table data.
+
+        :param position: The row number to insert at
+        :param rows: The number of rows to insert
+        :param parent: The parent item
+        :return: True if successful
+        """
         self.beginInsertRows(parent, position, position + rows - 1)
         for i in range(position, position + rows):
             self._data.insert(position, [""] * self.columnCount(parent))
@@ -95,6 +115,14 @@ class TableModel(QAbstractTableModel):
         return True 
 
     def removeRows(self, position, rows, parent=QModelIndex()):
+        """
+        Remove a row from the table data.
+
+        :param position: The row number to remove at
+        :param rows: The number of rows to remove
+        :param parent: The parent item
+        :return: True if successful
+        """
         self.beginRemoveRows(parent, position, position + rows - 1)
         for _ in range(rows):
             del self._data[position]
@@ -102,12 +130,26 @@ class TableModel(QAbstractTableModel):
         return True
     
     def getDataRows(self, row, count=1):
+        """
+        Get the data rows of the table model from a row index.
+
+        :param row: The starting row index
+        :param count: The number of rows to retrieve
+        :return: A list of lists containing the data
+        """
         dummy = []
         for i in range(row, min(self.rowCount(), row + count)):
             dummy.append(self._data[i])
         return dummy
 
     def setDataRows(self, rowIndex: int, value: list, parent=QModelIndex()):
+        """
+        Set the data row of the table model from a list of lists.
+
+        :param rowIndex: The starting row index
+        :param value: The list of lists to set the data from
+        :param parent: The parent QModelIndex
+        """
         for row in range(len(value)):
             if row >= self.rowCount(): break
             for col in range(len(value[row])):
@@ -134,6 +176,26 @@ class TableModel(QAbstractTableModel):
                         readDataBlock.input_registers['address'].append(actualRow[0])
         readDataBlock.updateLength()
         return readDataBlock
+    
+    def updateReadData(self, values: ReadDataBlock):
+        for row in range(self.rowCount()):
+            actualRow = self.getDataRows(row)[0]
+            index = self.createIndex(row, 5)
+            match actualRow[2]:
+                case ModbusBlock.COIL:
+                    relativeAddress = actualRow[0] - values.coils['address'][0]
+                    self.setData(index, values.coils['return'][relativeAddress])
+                case ModbusBlock.I_DISC:
+                    relativeAddress = actualRow[0] - values.discrete_inputs['address'][0]
+                    self.setData(index, values.discrete_inputs['return'][relativeAddress])
+                case ModbusBlock.H_REG:
+                    relativeAddress = actualRow[0] - values.hold_registers['address'][0]
+                    self.setData(index, values.hold_registers['return'][relativeAddress])
+                case ModbusBlock.I_REG:
+                    relativeAddress = actualRow[0] - values.input_registers['address'][0]
+                    self.setData(index, values.input_registers['return'][relativeAddress])
+  
+                        
                     
 class TableDelegate(QStyledItemDelegate):
 
@@ -296,10 +358,6 @@ class VarTable(QTableView):
                     self.model().setData(order_index, 'abcd')
                 if not (self.model().data(block_index) in [ModbusBlock.H_REG, ModbusBlock.I_REG]):
                     self.model().setData(block_index, ModbusBlock.H_REG.value)
-
-    def updateValues(self, values: ReadDataBlock):
-        index = self.model().createIndex(0, 5)
-        self.model().setData(index, values[0])
 
 class TestWindow(QMainWindow):
     def __init__(self):
