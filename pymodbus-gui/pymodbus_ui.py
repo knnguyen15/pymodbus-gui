@@ -4,7 +4,7 @@ from PyQt6.QtCore import QObject, QThread, pyqtSignal, QRect
 import sys
 from time import sleep
 from pymodbus.client import ModbusTcpClient
-from pymodbus.exceptions import ConnectionException
+from pymodbus.exceptions import ConnectionException, ModbusIOException
 
 from var_table import VarTable, ReadDataBlock
 from main_window import Ui_MainWindow
@@ -14,17 +14,21 @@ class Worker(QObject):
     progress = pyqtSignal(ReadDataBlock)
     
     
-    def __init__(self, parent: QObject | None = None, address: str = 'localhost', port: int = 5020, readDataBlock: ReadDataBlock = ReadDataBlock()) -> None:
+    def __init__(self, parent: QObject | None = None, 
+                 address: str = 'localhost', port: int = 5020, 
+                 sampleRate: float = 0.5,
+                 readDataBlock: ReadDataBlock = ReadDataBlock()) -> None:
         super().__init__(parent)
         self.client = ModbusTcpClient(address, port)
         self.readDataBlock = readDataBlock
+        self.sampleRate = sampleRate
 
     def run(self):
         try:
             """Long-running task."""
             self.client.connect()
             while True:
-                sleep(1)
+                
                 if self.readDataBlock.coils['length'] > 0:
                     result = self.client.read_coils(address=self.readDataBlock.coils['address'][0], count=self.readDataBlock.coils['length'])
                     self.readDataBlock.coils['return'] = result.bits
@@ -39,11 +43,18 @@ class Worker(QObject):
                     self.readDataBlock.input_registers['return'] = result.registers
                 
                 self.progress.emit(self.readDataBlock)
+                
+                sleep(self.sampleRate)  
 
-        except: ConnectionException
-
+        except ConnectionException:
+            ...
+        except ModbusIOException:
+            ...
+        finally:
+            ...
+        
         self.client.close()
-        self.finished.emit()
+        self.client.close()
 
 class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
