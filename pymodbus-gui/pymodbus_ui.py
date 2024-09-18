@@ -19,7 +19,7 @@ class Worker(QObject):
                  sampleRate: float = 0.5,
                  readDataBlock: ReadDataBlock = ReadDataBlock()) -> None:
         super().__init__(parent)
-        self.client = ModbusTcpClient(address, port)
+        self.client = ModbusTcpClient(address, port=port)
         self.readDataBlock = readDataBlock
         self.sampleRate = sampleRate
 
