@@ -16,10 +16,36 @@ class ModbusBlock(StrEnum):
 # Modbus variable types
 class VarType(StrEnum):
     BOOL    = 'bool'
+    UINT16  = 'uint16'
     INT16   = 'int16'
+    UINT32  = 'uint32'
     INT32   = 'int32'
-    FLOAT_IEEE  = 'float IEEE'
-    FLOAT_S7    = 'float S7'
+    FLOAT   = 'float32'
+    UINT64  = 'uint64'
+    INT64   = 'int64'
+    DOUBLE  = 'float64'
+    def __len__(self) -> int:
+        """Return the size in bytes of a variable of this type."""
+        if self == VarType.BOOL: return 1
+        if self == VarType.UINT16: return 2
+        if self == VarType.INT16: return 2
+        if self == VarType.UINT32: return 4
+        if self == VarType.INT32: return 4
+        if self == VarType.FLOAT: return 4
+        if self == VarType.UINT64: return 8
+        if self == VarType.INT64: return 8
+        if self == VarType.DOUBLE: return 8
+    def typeLength(type: str) -> int:
+        """Return the size in bytes of a variable of this type."""
+        if type == VarType.BOOL: return 1
+        if type == VarType.UINT16: return 2
+        if type == VarType.INT16: return 2
+        if type == VarType.UINT32: return 4
+        if type == VarType.INT32: return 4
+        if type == VarType.FLOAT: return 4
+        if type == VarType.UINT64: return 8
+        if type == VarType.INT64: return 8
+        if type == VarType.DOUBLE: return 8
 
 # Data block reading
 class ReadDataBlock():
@@ -98,7 +124,7 @@ class TableModel(QAbstractTableModel):
             else:
                 return f"Row {section + 1}"
     
-    def insertRows(self, position, rows, parent=QModelIndex()):
+    def insertRows(self, row, rows, parent=QModelIndex()):
         """
         Insert a row into the table data.
 
@@ -107,14 +133,14 @@ class TableModel(QAbstractTableModel):
         :param parent: The parent item
         :return: True if successful
         """
-        self.beginInsertRows(parent, position, position + rows - 1)
-        for i in range(position, position + rows):
-            self._data.insert(position, [""] * self.columnCount(parent))
+        self.beginInsertRows(parent, row, row + rows - 1)
+        for i in range(row, row + rows):
+            self._data.insert(row, [""] * self.columnCount(parent))
             # self._data.insert(position, self.getDataArray(i, 1)[0])
         self.endInsertRows()
         return True 
 
-    def removeRows(self, position, rows, parent=QModelIndex()):
+    def removeRows(self, row, count, parent=QModelIndex()):
         """
         Remove a row from the table data.
 
@@ -123,9 +149,9 @@ class TableModel(QAbstractTableModel):
         :param parent: The parent item
         :return: True if successful
         """
-        self.beginRemoveRows(parent, position, position + rows - 1)
-        for _ in range(rows):
-            del self._data[position]
+        self.beginRemoveRows(parent, row, row + count - 1)
+        for _ in range(count):
+            del self._data[row]
         self.endRemoveRows()
         return True
     
@@ -166,13 +192,13 @@ class TableModel(QAbstractTableModel):
                     if not(actualRow[0] in readDataBlock.coils['address']): 
                         readDataBlock.coils['address'].append(actualRow[0])
                 case ModbusBlock.I_DISC:
-                    if not(actualRow[0] in readDataBlock.coils['address']): 
+                    if not(actualRow[0] in readDataBlock.discrete_inputs['address']): 
                         readDataBlock.discrete_inputs['address'].append(actualRow[0])
                 case ModbusBlock.H_REG:
-                    if not(actualRow[0] in readDataBlock.coils['address']): 
+                    if not(actualRow[0] in readDataBlock.hold_registers['address']): 
                         readDataBlock.hold_registers['address'].append(actualRow[0])
                 case ModbusBlock.I_REG:
-                    if not(actualRow[0] in readDataBlock.coils['address']): 
+                    if not(actualRow[0] in readDataBlock.input_registers['address']): 
                         readDataBlock.input_registers['address'].append(actualRow[0])
         readDataBlock.updateLength()
         return readDataBlock
@@ -194,17 +220,28 @@ class TableModel(QAbstractTableModel):
                 case ModbusBlock.I_REG:
                     relativeAddress = actualRow[0] - values.input_registers['address'][0]
                     self.setData(index, values.input_registers['return'][relativeAddress])
-  
-                        
-                    
+            
 class TableDelegate(QStyledItemDelegate):
 
     blockChanged = pyqtSignal(QModelIndex, str)
 
     def __init__(self, parent=None):
+        """
+        Initialize a new TableDelegate.
+
+        :param parent: The parent object of this delegate
+        """
         super().__init__(parent)
 
     def createEditor(self, parent, option, index):
+        """
+        Create an editor widget, based on the item data.
+
+        :param parent: The parent object of this delegate
+        :param option: The style options for the editor
+        :param index: The QModelIndex of the item to be edited
+        :return: The editor widget
+        """
         if index.column() == 0: # Address
             editor = QSpinBox(parent)
             editor.setFrame(False)
@@ -222,17 +259,19 @@ class TableDelegate(QStyledItemDelegate):
             if selectedBlock in [ModbusBlock.COIL, ModbusBlock.I_DISC]:
                 editor.addItems([VarType.BOOL])
             else:
-                editor.addItems([VarType.INT16, VarType.INT32, VarType.FLOAT_IEEE, VarType.FLOAT_S7])
+                editor.addItems([i for i in VarType.__members__.values() if i != VarType.BOOL])
         if index.column() == 4: # Order
             model = index.model()
             selectedBlock = str(model.data(model.index(index.row(), 3), Qt.ItemDataRole.DisplayRole))
             editor = QComboBox(parent)
             if selectedBlock == VarType.BOOL:
                 editor.addItems([''])
-            elif selectedBlock == VarType.INT16:
+            elif selectedBlock in [VarType.INT16, VarType.UINT16]:
                 editor.addItems(['ab', 'ba'])
-            else:
+            elif selectedBlock in [VarType.INT32, VarType.UINT32, VarType.FLOAT]:
                 editor.addItems(['abcd', 'dcba', 'badc', 'cdba'])    
+            else:
+                editor.addItems(['no-swap', 'dword swap', 'word swap', 'byte swap', 'd-w swap', 'd-b swap', 'w-b swap', 'd-b swap'])
         if index.column() >= 5: # Value & Modify
             editor = QTextEdit(parent)
          
@@ -241,6 +280,13 @@ class TableDelegate(QStyledItemDelegate):
         return editor
 
     def setEditorData(self, editor, index):
+        """
+        Set the editor's data based on the data of the item being edited.
+
+        :param editor: The editor widget
+        :param index: The QModelIndex of the item to be edited
+        :return: None
+        """
         value = index.model().data(index, Qt.ItemDataRole.EditRole)
         if index.column() == 0:
             editor.setValue(value)
@@ -252,6 +298,14 @@ class TableDelegate(QStyledItemDelegate):
             editor.setCurrentIndex(i)
 
     def setModelData(self, editor, model, index):
+        """
+        Set the model's data based on the data of the item being edited.
+
+        :param editor: The editor widget
+        :param model: The model being edited
+        :param index: The QModelIndex of the item to be edited
+        :return: None
+        """
         if index.column() == 0:
             editor.interpretText()
             value = editor.value()
@@ -264,14 +318,42 @@ class TableDelegate(QStyledItemDelegate):
             editor.currentIndexChanged.connect(lambda: self.updateChanged(index))
 
     def updateEditorGeometry(self, editor, option, index):
+        """
+        Set the geometry of the given editor based on the option and index.
+
+        This is a reimplementation of QStyledItemDelegate.updateEditorGeometry.
+
+        :param editor: The editor widget
+        :param option: The style options
+        :param index: The QModelIndex of the item to be edited
+        :return: None
+        """
         editor.setGeometry(option.rect)
 
     def updateChanged(self, index, data):
+        """
+        Emits the blockChanged signal when the value of the given index
+        has changed.
+
+        :param index: The QModelIndex of the item that has changed
+        :param data: The new value
+        :return: None
+        """
         self.blockChanged.emit(index, data)
 
 class VarTable(QTableView):
 
     def __init__(self, model: TableModel = TableModel(), delegate: TableDelegate = TableDelegate(), parent=None):
+        """
+        Initialize the VarTable widget.
+
+        :param model: The TableModel instance to use.
+        :type model: TableModel
+        :param delegate: The TableDelegate instance to use.
+        :type delegate: TableDelegate
+        :param parent: The parent widget.
+        :type parent: QWidget
+        """
         super().__init__(parent)
         self.setModel(model)
         self.setItemDelegate(delegate)
@@ -280,7 +362,10 @@ class VarTable(QTableView):
         delegate.blockChanged.connect(self.checkSelection)
 
     def addRow(self, rows = 1):
-        # Add one row to selected index or last row if nothing is selected
+        """
+        Add one row to selected index or last row if nothing is selected
+        Move selected cursor to added row and set data to new row 
+        """
         selected = self.selectionModel().currentIndex()
         if selected.row() < 1: row = self.model().rowCount()
         else: row = selected.row() + 1
@@ -300,19 +385,21 @@ class VarTable(QTableView):
                            oldRow[0][2],  oldRow[0][3], oldRow[0][4], '', '']]
                 self.model().setDataRows(row, newRow)
             case ModbusBlock.H_REG:
-                if oldRow[0][3] == VarType.INT16: offset = 1
-                else: offset = 2
+                offset = int(VarType.typeLength(oldRow[0][3]) / 2)
                 newRow = [[oldRow[0][0] + offset, "Register " + str(oldRow[0][0] + 40001 + offset), 
                            oldRow[0][2],  oldRow[0][3], oldRow[0][4], '', '']]
                 self.model().setDataRows(row, newRow)
             case ModbusBlock.I_REG:
-                if oldRow[0][3] == VarType.INT16: offset = 1
-                else: offset = 2
+                offset = int(VarType.typeLength(oldRow[0][3]) / 2)
                 newRow = [[oldRow[0][0] + offset, "Register " + str(oldRow[0][0] + 30001 + offset), 
                            oldRow[0][2],  oldRow[0][3], oldRow[0][4], '', '']]
                 self.model().setDataRows(row, newRow)
     
     def removeRow(self, rows = 1):
+        """
+        Remove one row from selected index or last row if nothing is selected
+        Do not do anything if there is only one row left
+        """
         if self.model().rowCount() < 2: return
         selected = self.selectionModel().currentIndex()
         if selected.row() < 0: row = self.model().rowCount() - 1
@@ -320,6 +407,14 @@ class VarTable(QTableView):
         self.model().removeRows(row, 1, self.rootIndex())
 
     def checkSelection(self, index: QModelIndex, selection):
+        """
+        Check if the selected cell has changed and update the related cells in the same row
+        according to the logic of the table.
+
+        :param index: The QModelIndex of the changed cell
+        :param selection: The selected data
+        :return: None
+        """
         block_index = index.sibling(index.row(), 2)
         type_index  = index.sibling(index.row(), 3)
         order_index = index.sibling(index.row(), 4)
@@ -336,9 +431,10 @@ class VarTable(QTableView):
                     self.model().setData(type_index, VarType.BOOL.value)
                     self.model().setData(order_index, '')
             else:
-                if not (self.model().data(type_index) in [VarType.INT16, VarType.INT32, VarType.FLOAT_S7, VarType.FLOAT_IEEE]):
+                if not (VarType.typeLength(self.model().data(type_index)) == 2):
                     self.model().setData(type_index, VarType.INT16.value)
-                if not (self.model().data(order_index) in ['ab', 'ba', 'abcd', 'dcba', 'badc', 'cdba']):          
+                if not (self.model().data(order_index) in ['ab', 'ba', 'abcd', 'dcba', 'badc', 'cdba',
+                                                           'no-swap', 'dword swap', 'word swap', 'byte swap', 'd-w swap', 'd-b swap', 'w-b swap', 'd-b swap']):          
                     self.model().setData(order_index, 'ab')
         
         # if user change type
@@ -348,14 +444,19 @@ class VarTable(QTableView):
                     self.model().setData(order_index, '')
                 if not (self.model().data(block_index) in [ModbusBlock.COIL, ModbusBlock.I_DISC]):  
                     self.model().setData(block_index, ModbusBlock.COIL.value)
-            elif  selection == VarType.INT16: 
+            elif  selection in [VarType.INT16, VarType.UINT16]: 
                 if not (self.model().data(order_index) in ['ab', 'ba']):          
                     self.model().setData(order_index, 'ab')
                 if not (self.model().data(block_index) in [ModbusBlock.H_REG, ModbusBlock.I_REG]):
                     self.model().setData(block_index, ModbusBlock.H_REG.value)
-            else:
+            elif  selection in [VarType.INT32, VarType.UINT32, VarType.FLOAT]: 
                 if not (self.model().data(order_index) in ['abcd', 'dcba', 'badc', 'cdba']):          
                     self.model().setData(order_index, 'abcd')
+                if not (self.model().data(block_index) in [ModbusBlock.H_REG, ModbusBlock.I_REG]):
+                    self.model().setData(block_index, ModbusBlock.H_REG.value)
+            else:
+                if not (self.model().data(order_index) in ['no-swap', 'dword swap', 'word swap', 'byte swap', 'd-w swap', 'd-b swap', 'w-b swap', 'd-b swap']):          
+                    self.model().setData(order_index, 'no-swap')
                 if not (self.model().data(block_index) in [ModbusBlock.H_REG, ModbusBlock.I_REG]):
                     self.model().setData(block_index, ModbusBlock.H_REG.value)
 

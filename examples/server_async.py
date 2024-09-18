@@ -79,7 +79,7 @@ def setup_server(description=None, context=None, cmdline=None):
         # This is because many devices exhibit this kind of behavior (but not all)
         if args.store == "sequential":
             # Continuing, use a sequential block without gaps.
-            datablock = lambda : ModbusSequentialDataBlock(0x00, range(100))  # pylint: disable=unnecessary-lambda-assignment
+            datablock = lambda : ModbusSequentialDataBlock(0x00, range(65400, 65700))  # pylint: disable=unnecessary-lambda-assignment
         elif args.store == "sparse":
             # Continuing, or use a sparse DataBlock which can have gaps
             datablock = lambda : ModbusSparseDataBlock({0x00: 0, 0x05: 1})  # pylint: disable=unnecessary-lambda-assignment
