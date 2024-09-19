@@ -2,6 +2,7 @@ from PyQt6.QtCore import QAbstractTableModel, Qt, QModelIndex, pyqtSignal, QItem
 from PyQt6.QtWidgets import QApplication, QMainWindow, QTableView, QStyledItemDelegate, QSpinBox, QLineEdit, QComboBox, QTextEdit 
 
 from enum import StrEnum
+from utils import BytesConversion as conv
 import sys
 
 MAX_READ_LEN = 100
@@ -55,19 +56,19 @@ class ReadDataBlock():
         self.hold_registers  = {'address' : [], 'length' :0, 'return': []}
         self.input_registers = {'address' : [], 'length' :0, 'return': []}
 
-    def updateLength(self):
+    def updateLength(self, maxLen: dict = {'coil':1, 'disc_in':1, 'hold_reg':1, 'in_reg':1}) -> None:
         if len(self.coils['address']) > 0: 
             self.coils['address'].sort()
-            self.coils['length'] = self.coils['address'][-1] - self.coils['address'][0] + 1
+            self.coils['length'] = self.coils['address'][-1] - self.coils['address'][0] + maxLen['coil']
         if len(self.discrete_inputs['address']) > 0: 
             self.discrete_inputs['address'].sort()
-            self.discrete_inputs['length'] = self.discrete_inputs['address'][-1] - self.discrete_inputs['address'][0] + 1
+            self.discrete_inputs['length'] = self.discrete_inputs['address'][-1] - self.discrete_inputs['address'][0] + maxLen['disc_in']
         if len(self.hold_registers['address']) > 0: 
             self.hold_registers['address'].sort()
-            self.hold_registers['length'] = self.hold_registers['address'][-1] - self.hold_registers['address'][0] + 1
+            self.hold_registers['length'] = self.hold_registers['address'][-1] - self.hold_registers['address'][0] + maxLen['hold_reg']
         if len(self.input_registers['address']) > 0: 
             self.input_registers['address'].sort()
-            self.input_registers['length'] = self.input_registers['address'][-1] - self.input_registers['address'][0] + 1
+            self.input_registers['length'] = self.input_registers['address'][-1] - self.input_registers['address'][0] + maxLen['in_reg']
 
     def __str__(self) -> str:
         outCoil = f"Coils adresses are: {self.coils['address']}\n Coils length: {self.coils['length']}\n"
@@ -76,6 +77,7 @@ class ReadDataBlock():
         outIReg = f"Input registers adresses are: {self.input_registers['address']}\n Input registers length: {self.input_registers['length']}\n"
         return outCoil + outDisI + outHReg + outIReg
 
+# Model
 class TableModel(QAbstractTableModel):
 
     def __init__(self, data = [[0, "Register 40001", "hold. reg", "int16", "ab", "", ""]],
@@ -185,22 +187,41 @@ class TableModel(QAbstractTableModel):
 
     def getReadData(self) -> ReadDataBlock:
         readDataBlock = ReadDataBlock()
+        # max address for each register type
+        co_max = 0
+        di_max = 0
+        hr_max = 0
+        ir_max = 0
+        # datalength corresponding to max address
+        co_last = 1
+        di_last = 1
+        hr_last = 1
+        ir_last = 1
+
         for row in range(self.rowCount()):
             actualRow = self.getDataRows(row)[0]
             match actualRow[2]:
                 case ModbusBlock.COIL:
                     if not(actualRow[0] in readDataBlock.coils['address']): 
                         readDataBlock.coils['address'].append(actualRow[0])
+                        co_max = max(co_max, actualRow[0])
+                        if co_max == actualRow[0]: co_last = VarType.typeLength(actualRow[3])
                 case ModbusBlock.I_DISC:
                     if not(actualRow[0] in readDataBlock.discrete_inputs['address']): 
                         readDataBlock.discrete_inputs['address'].append(actualRow[0])
+                        di_max = max(di_max, actualRow[0])
+                        if di_max == actualRow[0]: di_last = VarType.typeLength(actualRow[3])
                 case ModbusBlock.H_REG:
                     if not(actualRow[0] in readDataBlock.hold_registers['address']): 
                         readDataBlock.hold_registers['address'].append(actualRow[0])
+                        hr_max = max(hr_max, actualRow[0])
+                        if hr_max == actualRow[0]: hr_last = VarType.typeLength(actualRow[3])
                 case ModbusBlock.I_REG:
                     if not(actualRow[0] in readDataBlock.input_registers['address']): 
                         readDataBlock.input_registers['address'].append(actualRow[0])
-        readDataBlock.updateLength()
+                        ir_max = max(ir_max, actualRow[0])
+                        if ir_max == actualRow[0]: ir_last = VarType.typeLength(actualRow[3])
+        readDataBlock.updateLength({'coil':co_last, 'disc_in':di_last, 'hold_reg':hr_last, 'in_reg':ir_last})
         return readDataBlock
     
     def updateReadData(self, values: ReadDataBlock):
@@ -211,16 +232,109 @@ class TableModel(QAbstractTableModel):
                 case ModbusBlock.COIL:
                     relativeAddress = actualRow[0] - values.coils['address'][0]
                     self.setData(index, values.coils['return'][relativeAddress])
+
                 case ModbusBlock.I_DISC:
                     relativeAddress = actualRow[0] - values.discrete_inputs['address'][0]
                     self.setData(index, values.discrete_inputs['return'][relativeAddress])
+
                 case ModbusBlock.H_REG:
                     relativeAddress = actualRow[0] - values.hold_registers['address'][0]
-                    self.setData(index, values.hold_registers['return'][relativeAddress])
+                    # ======= Check Byte Swapping
+                    match actualRow[4]:
+                        # 16-bit data length
+                        case 'ab': setData = values.hold_registers['return'][relativeAddress]
+                        case 'ba': setData = conv.swapBytes([values.hold_registers['return'][relativeAddress]])[0]
+                        # 32-bit data length
+                        case 'abcd': bufferUInt16 = values.hold_registers['return'][relativeAddress:relativeAddress+2]
+                        case 'badc': bufferUInt16 = conv.swapBytes(values.hold_registers['return'][relativeAddress:relativeAddress+2])
+                        case 'cdab': bufferUInt16 = conv.swapWords(values.hold_registers['return'][relativeAddress:relativeAddress+2])
+                        case 'dcba': bufferUInt16 = conv.swapBytes(conv.swapWords(values.hold_registers['return'][relativeAddress:relativeAddress+2]))
+                        # 64-bit data length - 1 swap
+                        case 'no-swap'      : bufferUInt16 = values.hold_registers['return'][relativeAddress:relativeAddress+4]
+                        case 'byte swap'    : bufferUInt16 = conv.swapBytes(values.hold_registers['return'][relativeAddress:relativeAddress+4])
+                        case 'word swap'    : bufferUInt16 = conv.swapWords(values.hold_registers['return'][relativeAddress:relativeAddress+4])
+                        case 'dword swap'   : bufferUInt16 = conv.swapDwords(values.hold_registers['return'][relativeAddress:relativeAddress+4])
+                        # 64-bit data length - 2 swap
+                        case 'd-w swap'     : 
+                            bufferUInt16 = conv.swapDwords(values.hold_registers['return'][relativeAddress:relativeAddress+4])
+                            bufferUInt16 = conv.swapWords(bufferUInt16)
+                        case 'd-b swap'     : 
+                            bufferUInt16 = conv.swapDwords(values.hold_registers['return'][relativeAddress:relativeAddress+4])
+                            bufferUInt16 = conv.swapBytes(bufferUInt16)
+                        case 'w-b swap'     :  
+                            bufferUInt16 = conv.swapWords(values.hold_registers['return'][relativeAddress:relativeAddress+4])
+                            bufferUInt16 = conv.swapBytes(bufferUInt16) 
+                        # 64-bit data length - 3 swap
+                        case 'd-w-b swap'     :  
+                            bufferUInt16 = conv.swapDwords(values.hold_registers['return'][relativeAddress:relativeAddress+4])
+                            bufferUInt16 = conv.swapWords(bufferUInt16)
+                            bufferUInt16 = conv.swapBytes(bufferUInt16) 
+                            
+                    # ======= Check Data Format
+                    match actualRow[3]:
+                        # 16-bit data length
+                        case VarType.INT16:     setData = conv.toInt16(setData)
+                        case VarType.UINT16:    setData = setData
+                        # 32-bit data length
+                        case VarType.INT32:     setData = conv.toInt32(bufferUInt16)
+                        case VarType.UINT32:    setData = conv.toUInt32(bufferUInt16)
+                        case VarType.FLOAT:     setData = conv.toFloat32(bufferUInt16)
+                        # 64-bit data length
+                        case VarType.INT64:     setData = conv.toInt64(bufferUInt16)
+                        case VarType.UINT64:    setData = conv.toUInt64(bufferUInt16)
+                        case VarType.DOUBLE:    setData = conv.toDouble(bufferUInt16)
+
+                    self.setData(index, setData)
+
                 case ModbusBlock.I_REG:
                     relativeAddress = actualRow[0] - values.input_registers['address'][0]
-                    self.setData(index, values.input_registers['return'][relativeAddress])
-            
+                    # ======= Check Byte Swapping
+                    match actualRow[4]:
+                        # 16-bit data length
+                        case 'ab': setData = values.input_registers['return'][relativeAddress]
+                        case 'ba': setData = conv.swapBytes([values.input_registers['return'][relativeAddress]])[0]
+                        # 32-bit data length
+                        case 'abcd': bufferUInt16 = values.input_registers['return'][relativeAddress:relativeAddress+2]
+                        case 'badc': bufferUInt16 = conv.swapBytes(values.input_registers['return'][relativeAddress:relativeAddress+2])
+                        case 'cdab': bufferUInt16 = conv.swapWords(values.input_registers['return'][relativeAddress:relativeAddress+2])
+                        case 'dcba': bufferUInt16 = conv.swapBytes(conv.swapWords(values.input_registers['return'][relativeAddress:relativeAddress+2]))
+                        # 64-bit data length - 1 swap
+                        case 'no-swap'      : bufferUInt16 = values.input_registers['return'][relativeAddress:relativeAddress+4]
+                        case 'byte swap'    : bufferUInt16 = conv.swapBytes(values.input_registers['return'][relativeAddress:relativeAddress+4])
+                        case 'word swap'    : bufferUInt16 = conv.swapWords(values.input_registers['return'][relativeAddress:relativeAddress+4])
+                        case 'dword swap'   : bufferUInt16 = conv.swapDwords(values.input_registers['return'][relativeAddress:relativeAddress+4])
+                        # 64-bit data length - 2 swap
+                        case 'd-w swap'     : 
+                            bufferUInt16 = conv.swapDwords(values.input_registers['return'][relativeAddress:relativeAddress+4])
+                            bufferUInt16 = conv.swapWords(bufferUInt16)
+                        case 'd-b swap'     : 
+                            bufferUInt16 = conv.swapDwords(values.input_registers['return'][relativeAddress:relativeAddress+4])
+                            bufferUInt16 = conv.swapBytes(bufferUInt16)
+                        case 'w-b swap'     :  
+                            bufferUInt16 = conv.swapWords(values.input_registers['return'][relativeAddress:relativeAddress+4])
+                            bufferUInt16 = conv.swapBytes(bufferUInt16) 
+                        # 64-bit data length - 3 swap
+                        case 'd-w-b swap'     :  
+                            bufferUInt16 = conv.swapDwords(values.input_registers['return'][relativeAddress:relativeAddress+4])
+                            bufferUInt16 = conv.swapWords(bufferUInt16)
+                            bufferUInt16 = conv.swapBytes(bufferUInt16) 
+                    # ======= Check Data Format
+                    match actualRow[3]:
+                        # 16-bit data length
+                        case VarType.INT16:     setData = conv.toInt16(setData)
+                        case VarType.UINT16:    setData = setData
+                        # 32-bit data length
+                        case VarType.INT32:     setData = conv.toInt32(bufferUInt16)
+                        case VarType.UINT32:    setData = conv.toUInt32(bufferUInt16)
+                        case VarType.FLOAT:   setData = conv.toFloat32(bufferUInt16)
+                        # 64-bit data length
+                        case VarType.INT64:     setData = conv.toInt64(bufferUInt16)
+                        case VarType.UINT64:    setData = conv.toUInt64(bufferUInt16)
+                        case VarType.DOUBLE:   setData = conv.toDouble(bufferUInt16)
+
+                    self.setData(index, setData)
+
+# Controller            
 class TableDelegate(QStyledItemDelegate):
 
     blockChanged = pyqtSignal(QModelIndex, str)
@@ -269,9 +383,9 @@ class TableDelegate(QStyledItemDelegate):
             elif selectedBlock in [VarType.INT16, VarType.UINT16]:
                 editor.addItems(['ab', 'ba'])
             elif selectedBlock in [VarType.INT32, VarType.UINT32, VarType.FLOAT]:
-                editor.addItems(['abcd', 'dcba', 'badc', 'cdba'])    
+                editor.addItems(['abcd', 'dcba', 'badc', 'cdab'])    
             else:
-                editor.addItems(['no-swap', 'dword swap', 'word swap', 'byte swap', 'd-w swap', 'd-b swap', 'w-b swap', 'd-b swap'])
+                editor.addItems(['no-swap', 'dword swap', 'word swap', 'byte swap', 'd-w swap', 'd-b swap', 'w-b swap', 'd-w-b swap'])
         if index.column() >= 5: # Value & Modify
             editor = QTextEdit(parent)
          
@@ -341,6 +455,7 @@ class TableDelegate(QStyledItemDelegate):
         """
         self.blockChanged.emit(index, data)
 
+# View
 class VarTable(QTableView):
 
     def __init__(self, model: TableModel = TableModel(), delegate: TableDelegate = TableDelegate(), parent=None):
@@ -433,7 +548,7 @@ class VarTable(QTableView):
             else:
                 if not (VarType.typeLength(self.model().data(type_index)) == 2):
                     self.model().setData(type_index, VarType.INT16.value)
-                if not (self.model().data(order_index) in ['ab', 'ba', 'abcd', 'dcba', 'badc', 'cdba',
+                if not (self.model().data(order_index) in ['ab', 'ba', 'abcd', 'dcba', 'badc', 'cdab',
                                                            'no-swap', 'dword swap', 'word swap', 'byte swap', 'd-w swap', 'd-b swap', 'w-b swap', 'd-b swap']):          
                     self.model().setData(order_index, 'ab')
         
@@ -450,7 +565,7 @@ class VarTable(QTableView):
                 if not (self.model().data(block_index) in [ModbusBlock.H_REG, ModbusBlock.I_REG]):
                     self.model().setData(block_index, ModbusBlock.H_REG.value)
             elif  selection in [VarType.INT32, VarType.UINT32, VarType.FLOAT]: 
-                if not (self.model().data(order_index) in ['abcd', 'dcba', 'badc', 'cdba']):          
+                if not (self.model().data(order_index) in ['abcd', 'dcba', 'badc', 'cdab']):          
                     self.model().setData(order_index, 'abcd')
                 if not (self.model().data(block_index) in [ModbusBlock.H_REG, ModbusBlock.I_REG]):
                     self.model().setData(block_index, ModbusBlock.H_REG.value)
@@ -460,6 +575,7 @@ class VarTable(QTableView):
                 if not (self.model().data(block_index) in [ModbusBlock.H_REG, ModbusBlock.I_REG]):
                     self.model().setData(block_index, ModbusBlock.H_REG.value)
 
+# Test Windows
 class TestWindow(QMainWindow):
     def __init__(self):
         super().__init__()
