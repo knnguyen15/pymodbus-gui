@@ -119,6 +119,50 @@ class BytesConversion:
         :return: A double precision floating point
         """
         return struct.unpack('@d', struct.pack('@HHHH', input[0], input[1], input[2], input[3]))[0]
+    
+    def fromInt16(input: int) -> list:
+        return [struct.unpack('@H', struct.pack('@h', input))[0]]
+    
+    def fromInt32(input: int) -> list:
+        i = struct.unpack('@I', struct.pack('@i', input))[0]
+        return [int(i / 65536), i % 65536]
+    
+    def fromUInt32(input: int) -> list:
+        i = struct.unpack('@I', struct.pack('@I', input))[0]
+        return [int(i / 65536), i % 65536]
+    
+    def fromFloat32(input: float) -> list:
+        i = struct.unpack('@I', struct.pack('@f', input))[0]
+        return [int(i / 65536), i % 65536]
 
+    def fromInt64(input: int) -> list:
+        i = struct.unpack('@Q', struct.pack('@q', input))[0]
+        a = int(i / pow(2, 48))
+        j = i % pow(2, 48)
+        b = int(j / pow(2, 32))
+        k = j % pow(2, 32)
+        c = int(k / pow(2, 16))
+        d = k % pow(2, 16)
+        return [a, b, c, d]
+    
+    def fromUInt64(input: int) -> list:
+        i = struct.unpack('@Q', struct.pack('@Q', input))[0]
+        a = int(i / pow(2, 48))
+        j = i % pow(2, 48)
+        b = int(j / pow(2, 32))
+        k = j % pow(2, 32)
+        c = int(k / pow(2, 16))
+        d = k % pow(2, 16)
+        return [a, b, c, d]
 
-print(BytesConversion.swapBytes(BytesConversion.swapWords([1,2])))
+    def fromDouble(input: int) -> list:
+        i = struct.unpack('@Q', struct.pack('@d', input))[0]
+        a = int(i / pow(2, 48))
+        j = i % pow(2, 48)
+        b = int(j / pow(2, 32))
+        k = j % pow(2, 32)
+        c = int(k / pow(2, 16))
+        d = k % pow(2, 16)
+        return [a, b, c, d]
+
+print(BytesConversion.fromInt64(65538))

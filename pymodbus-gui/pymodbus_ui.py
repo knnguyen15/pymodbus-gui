@@ -6,7 +6,7 @@ from time import sleep
 from pymodbus.client import ModbusTcpClient
 from pymodbus.exceptions import ConnectionException, ModbusIOException
 
-from var_table import VarTable, ReadDataBlock
+from var_table import VarTable, ReadDataBlock, WriteDataBlock
 from main_window import Ui_MainWindow
 
 class Worker(QObject):
@@ -15,7 +15,7 @@ class Worker(QObject):
     
     
     def __init__(self, parent: QObject | None = None, 
-                 address: str = 'localhost', port: int = 5020, 
+                 address: str = 'localhost', port: int = 502, 
                  sampleRate: float = 0.5,
                  readDataBlock: ReadDataBlock = ReadDataBlock()) -> None:
         super().__init__(parent)
@@ -41,7 +41,6 @@ class Worker(QObject):
                 if self.readDataBlock.input_registers['length'] > 0:
                     result = self.client.read_input_registers(address=self.readDataBlock.input_registers['address'][0], count=self.readDataBlock.input_registers['length'])
                     self.readDataBlock.input_registers['return'] = result.registers
-                
                 self.progress.emit(self.readDataBlock)
                 
                 sleep(self.sampleRate)  
@@ -50,11 +49,20 @@ class Worker(QObject):
             ...
         except ModbusIOException:
             ...
+        except AttributeError:
+            ...
         finally:
             ...
         
         self.client.close()
         self.client.close()
+    
+    def write(self, writeDB: WriteDataBlock):
+        for coil in writeDB.coils:
+            self.client.write_coil(address = coil, value = writeDB.coils[coil])
+        for register in writeDB.hold_registers:
+            self.client.write_register(address = register, value = writeDB.hold_registers[register])
+        
 
 class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
@@ -72,16 +80,33 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.removeBtn.clicked.connect(self.dataTable.removeRow)
 
         self.connectBtn.clicked.connect(self.runLongTask)
+        self.writeBtn.clicked.connect(self.test)
+
+        self.ipaddInput.setText('127.0.0.1')
+        self.portInput.setText('5020')
+        self.rateInput.setText('0.5')
     
     def test(self):
-        print(str(self.dataTable.model().getReadData()))
+        print(str(self.dataTable.model().getWriteData()))
+        self.worker.write(self.dataTable.model().getWriteData())
+        #print(str(self.dataTable.model().getReadData()))
 
     def runLongTask(self):
-        self.test()
         # Step 2: Create a QThread object
         self.thread = QThread()
         # Step 3: Create a worker object
-        self.worker = Worker(readDataBlock = self.dataTable.model().getReadData())
+        try:
+            address = self.ipaddInput.toPlainText()
+            port = int(self.portInput.toPlainText())
+            sampleRate = float(self.rateInput.toPlainText())
+        except ValueError:
+            print("Input Error")
+            return
+        else:
+            self.worker = Worker(address = address, 
+                                port = port, 
+                                sampleRate = sampleRate,
+                                readDataBlock = self.dataTable.model().getReadData())
         # Step 4: Move worker to the thread
         self.worker.moveToThread(self.thread)
         # Step 5: Connect signals and slots

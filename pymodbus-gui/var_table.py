@@ -15,7 +15,7 @@ class ModbusBlock(StrEnum):
     I_REG   = 'in. reg'
 
 # Modbus variable types
-class VarType(StrEnum):
+class DispVarType(StrEnum):
     BOOL    = 'bool'
     UINT16  = 'uint16'
     INT16   = 'int16'
@@ -27,26 +27,26 @@ class VarType(StrEnum):
     DOUBLE  = 'float64'
     def __len__(self) -> int:
         """Return the size in bytes of a variable of this type."""
-        if self == VarType.BOOL: return 1
-        if self == VarType.UINT16: return 2
-        if self == VarType.INT16: return 2
-        if self == VarType.UINT32: return 4
-        if self == VarType.INT32: return 4
-        if self == VarType.FLOAT: return 4
-        if self == VarType.UINT64: return 8
-        if self == VarType.INT64: return 8
-        if self == VarType.DOUBLE: return 8
+        if self == DispVarType.BOOL: return 1
+        if self == DispVarType.UINT16: return 2
+        if self == DispVarType.INT16: return 2
+        if self == DispVarType.UINT32: return 4
+        if self == DispVarType.INT32: return 4
+        if self == DispVarType.FLOAT: return 4
+        if self == DispVarType.UINT64: return 8
+        if self == DispVarType.INT64: return 8
+        if self == DispVarType.DOUBLE: return 8
     def typeLength(type: str) -> int:
         """Return the size in bytes of a variable of this type."""
-        if type == VarType.BOOL: return 1
-        if type == VarType.UINT16: return 2
-        if type == VarType.INT16: return 2
-        if type == VarType.UINT32: return 4
-        if type == VarType.INT32: return 4
-        if type == VarType.FLOAT: return 4
-        if type == VarType.UINT64: return 8
-        if type == VarType.INT64: return 8
-        if type == VarType.DOUBLE: return 8
+        if type == DispVarType.BOOL: return 1
+        if type == DispVarType.UINT16: return 2
+        if type == DispVarType.INT16: return 2
+        if type == DispVarType.UINT32: return 4
+        if type == DispVarType.INT32: return 4
+        if type == DispVarType.FLOAT: return 4
+        if type == DispVarType.UINT64: return 8
+        if type == DispVarType.INT64: return 8
+        if type == DispVarType.DOUBLE: return 8
 
 # Data block reading
 class ReadDataBlock():
@@ -76,6 +76,19 @@ class ReadDataBlock():
         outHReg = f"Holding registers adresses are: {self.hold_registers['address']}\n Holding registers length: {self.hold_registers['length']}\n"
         outIReg = f"Input registers adresses are: {self.input_registers['address']}\n Input registers length: {self.input_registers['length']}\n"
         return outCoil + outDisI + outHReg + outIReg
+
+# Data block writing
+class WriteDataBlock():
+    def __init__(self) -> None:
+        self.coils = {}
+        self.hold_registers  = {}
+    
+    def __str__(self) -> str:
+        coilStr = '--------- Coils write address and value: \n'
+        for coil in self.coils: coilStr = coilStr + f"Coils adresses: {coil} -- Value {self.coils[coil]}\n"
+        regStr = '-------- Register write address and value: \n'
+        for reg in self.hold_registers: regStr = regStr + f"Register adresses: {reg} -- Value {self.hold_registers[reg]}\n"
+        return coilStr + regStr
 
 # Model
 class TableModel(QAbstractTableModel):
@@ -205,22 +218,22 @@ class TableModel(QAbstractTableModel):
                     if not(actualRow[0] in readDataBlock.coils['address']): 
                         readDataBlock.coils['address'].append(actualRow[0])
                         co_max = max(co_max, actualRow[0])
-                        if co_max == actualRow[0]: co_last = VarType.typeLength(actualRow[3])
+                        if co_max == actualRow[0]: co_last = DispVarType.typeLength(actualRow[3])
                 case ModbusBlock.I_DISC:
                     if not(actualRow[0] in readDataBlock.discrete_inputs['address']): 
                         readDataBlock.discrete_inputs['address'].append(actualRow[0])
                         di_max = max(di_max, actualRow[0])
-                        if di_max == actualRow[0]: di_last = VarType.typeLength(actualRow[3])
+                        if di_max == actualRow[0]: di_last = DispVarType.typeLength(actualRow[3])
                 case ModbusBlock.H_REG:
                     if not(actualRow[0] in readDataBlock.hold_registers['address']): 
                         readDataBlock.hold_registers['address'].append(actualRow[0])
                         hr_max = max(hr_max, actualRow[0])
-                        if hr_max == actualRow[0]: hr_last = VarType.typeLength(actualRow[3])
+                        if hr_max == actualRow[0]: hr_last = DispVarType.typeLength(actualRow[3])
                 case ModbusBlock.I_REG:
                     if not(actualRow[0] in readDataBlock.input_registers['address']): 
                         readDataBlock.input_registers['address'].append(actualRow[0])
                         ir_max = max(ir_max, actualRow[0])
-                        if ir_max == actualRow[0]: ir_last = VarType.typeLength(actualRow[3])
+                        if ir_max == actualRow[0]: ir_last = DispVarType.typeLength(actualRow[3])
         readDataBlock.updateLength({'coil':co_last, 'disc_in':di_last, 'hold_reg':hr_last, 'in_reg':ir_last})
         return readDataBlock
     
@@ -273,16 +286,16 @@ class TableModel(QAbstractTableModel):
                     # ======= Check Data Format
                     match actualRow[3]:
                         # 16-bit data length
-                        case VarType.INT16:     setData = conv.toInt16(setData)
-                        case VarType.UINT16:    setData = setData
+                        case DispVarType.INT16:     setData = conv.toInt16(setData)
+                        case DispVarType.UINT16:    setData = setData
                         # 32-bit data length
-                        case VarType.INT32:     setData = conv.toInt32(bufferUInt16)
-                        case VarType.UINT32:    setData = conv.toUInt32(bufferUInt16)
-                        case VarType.FLOAT:     setData = conv.toFloat32(bufferUInt16)
+                        case DispVarType.INT32:     setData = conv.toInt32(bufferUInt16)
+                        case DispVarType.UINT32:    setData = conv.toUInt32(bufferUInt16)
+                        case DispVarType.FLOAT:     setData = conv.toFloat32(bufferUInt16)
                         # 64-bit data length
-                        case VarType.INT64:     setData = conv.toInt64(bufferUInt16)
-                        case VarType.UINT64:    setData = conv.toUInt64(bufferUInt16)
-                        case VarType.DOUBLE:    setData = conv.toDouble(bufferUInt16)
+                        case DispVarType.INT64:     setData = conv.toInt64(bufferUInt16)
+                        case DispVarType.UINT64:    setData = conv.toUInt64(bufferUInt16)
+                        case DispVarType.DOUBLE:    setData = conv.toDouble(bufferUInt16)
 
                     self.setData(index, setData)
 
@@ -321,18 +334,69 @@ class TableModel(QAbstractTableModel):
                     # ======= Check Data Format
                     match actualRow[3]:
                         # 16-bit data length
-                        case VarType.INT16:     setData = conv.toInt16(setData)
-                        case VarType.UINT16:    setData = setData
+                        case DispVarType.INT16:     setData = conv.toInt16(setData)
+                        case DispVarType.UINT16:    setData = setData
                         # 32-bit data length
-                        case VarType.INT32:     setData = conv.toInt32(bufferUInt16)
-                        case VarType.UINT32:    setData = conv.toUInt32(bufferUInt16)
-                        case VarType.FLOAT:   setData = conv.toFloat32(bufferUInt16)
+                        case DispVarType.INT32:     setData = conv.toInt32(bufferUInt16)
+                        case DispVarType.UINT32:    setData = conv.toUInt32(bufferUInt16)
+                        case DispVarType.FLOAT:   setData = conv.toFloat32(bufferUInt16)
                         # 64-bit data length
-                        case VarType.INT64:     setData = conv.toInt64(bufferUInt16)
-                        case VarType.UINT64:    setData = conv.toUInt64(bufferUInt16)
-                        case VarType.DOUBLE:   setData = conv.toDouble(bufferUInt16)
+                        case DispVarType.INT64:     setData = conv.toInt64(bufferUInt16)
+                        case DispVarType.UINT64:    setData = conv.toUInt64(bufferUInt16)
+                        case DispVarType.DOUBLE:   setData = conv.toDouble(bufferUInt16)
 
                     self.setData(index, setData)
+
+    def getWriteData(self) -> WriteDataBlock:
+        writeDataBlock = WriteDataBlock()
+        
+        for row in range(self.rowCount()):
+            actualRow = self.getDataRows(row)[0]
+            match actualRow[3]:
+                case DispVarType.BOOL:
+                    if str(actualRow[6]).lower() in ['true', '1']:
+                        writeDataBlock.coils.update({actualRow[0]: True})
+                    elif str(actualRow[6]).lower() in ['false', '0']:
+                        writeDataBlock.coils.update({actualRow[0]: False})
+                    else:
+                        continue
+                case DispVarType.INT16:
+                    try:
+                        value = conv.fromInt16(int(actualRow[6]))[0]
+                        writeDataBlock.hold_registers.update({actualRow[0]: value})
+                    except ValueError:
+                        continue
+                case DispVarType.UINT16:
+                    try:
+                        value = int(actualRow[6])
+                        writeDataBlock.hold_registers.update({actualRow[0]: value})
+                    except ValueError:
+                        continue
+                case DispVarType.INT32:
+                    try:
+                        value = conv.fromInt32(int(actualRow[6]))
+                        writeDataBlock.hold_registers.update({actualRow[0]: value [0]})
+                        writeDataBlock.hold_registers.update({actualRow[0] + 1: value [1]})
+                    except ValueError:
+                        continue
+                case DispVarType.UINT32:
+                    try:
+                        value = conv.fromUInt32(int(actualRow[6]))
+                        writeDataBlock.hold_registers.update({actualRow[0]: value [0]})
+                        writeDataBlock.hold_registers.update({actualRow[0] + 1: value [1]})
+                    except ValueError:
+                        continue
+                case DispVarType.FLOAT:
+                    try:
+                        value = conv.fromFloat32(float(actualRow[6]))
+                        writeDataBlock.hold_registers.update({actualRow[0]: value [0]})
+                        writeDataBlock.hold_registers.update({actualRow[0] + 1: value [1]})
+                    except ValueError:
+                        continue
+        
+        return writeDataBlock
+
+
 
 # Controller            
 class TableDelegate(QStyledItemDelegate):
@@ -371,23 +435,23 @@ class TableDelegate(QStyledItemDelegate):
             selectedBlock = str(model.data(model.index(index.row(), 2), Qt.ItemDataRole.DisplayRole))
             editor = QComboBox(parent)
             if selectedBlock in [ModbusBlock.COIL, ModbusBlock.I_DISC]:
-                editor.addItems([VarType.BOOL])
+                editor.addItems([DispVarType.BOOL])
             else:
-                editor.addItems([i for i in VarType.__members__.values() if i != VarType.BOOL])
+                editor.addItems([i for i in DispVarType.__members__.values() if i != DispVarType.BOOL])
         if index.column() == 4: # Order
             model = index.model()
             selectedBlock = str(model.data(model.index(index.row(), 3), Qt.ItemDataRole.DisplayRole))
             editor = QComboBox(parent)
-            if selectedBlock == VarType.BOOL:
+            if selectedBlock == DispVarType.BOOL:
                 editor.addItems([''])
-            elif selectedBlock in [VarType.INT16, VarType.UINT16]:
+            elif selectedBlock in [DispVarType.INT16, DispVarType.UINT16]:
                 editor.addItems(['ab', 'ba'])
-            elif selectedBlock in [VarType.INT32, VarType.UINT32, VarType.FLOAT]:
+            elif selectedBlock in [DispVarType.INT32, DispVarType.UINT32, DispVarType.FLOAT]:
                 editor.addItems(['abcd', 'dcba', 'badc', 'cdab'])    
             else:
                 editor.addItems(['no-swap', 'dword swap', 'word swap', 'byte swap', 'd-w swap', 'd-b swap', 'w-b swap', 'd-w-b swap'])
         if index.column() >= 5: # Value & Modify
-            editor = QTextEdit(parent)
+            editor = QLineEdit(parent)
          
         if index.column() in [2, 3]: 
             editor.currentIndexChanged.connect(lambda: self.updateChanged(index, editor.currentText()))
@@ -423,10 +487,10 @@ class TableDelegate(QStyledItemDelegate):
         if index.column() == 0:
             editor.interpretText()
             value = editor.value()
-        if index.column() == 1:
+        if index.column() in [1, 6]:
             value = editor.displayText()
-        if index.column() >= 2 and index.column() <= 4:
-            value = editor.currentText()
+        if index.column() in [2, 3, 4]:
+            value = editor.currentText() 
         model.setData(index, value, Qt.ItemDataRole.EditRole)
         if index.column() in [2, 3, 4]:
             editor.currentIndexChanged.connect(lambda: self.updateChanged(index))
@@ -500,12 +564,12 @@ class VarTable(QTableView):
                            oldRow[0][2],  oldRow[0][3], oldRow[0][4], '', '']]
                 self.model().setDataRows(row, newRow)
             case ModbusBlock.H_REG:
-                offset = int(VarType.typeLength(oldRow[0][3]) / 2)
+                offset = int(DispVarType.typeLength(oldRow[0][3]) / 2)
                 newRow = [[oldRow[0][0] + offset, "Register " + str(oldRow[0][0] + 40001 + offset), 
                            oldRow[0][2],  oldRow[0][3], oldRow[0][4], '', '']]
                 self.model().setDataRows(row, newRow)
             case ModbusBlock.I_REG:
-                offset = int(VarType.typeLength(oldRow[0][3]) / 2)
+                offset = int(DispVarType.typeLength(oldRow[0][3]) / 2)
                 newRow = [[oldRow[0][0] + offset, "Register " + str(oldRow[0][0] + 30001 + offset), 
                            oldRow[0][2],  oldRow[0][3], oldRow[0][4], '', '']]
                 self.model().setDataRows(row, newRow)
@@ -542,29 +606,29 @@ class VarTable(QTableView):
         # if user change block 
         if index.column() == 2: 
             if  selection in [ModbusBlock.COIL, ModbusBlock.I_DISC]:
-                if self.model().data(type_index) != VarType.BOOL: 
-                    self.model().setData(type_index, VarType.BOOL.value)
+                if self.model().data(type_index) != DispVarType.BOOL: 
+                    self.model().setData(type_index, DispVarType.BOOL.value)
                     self.model().setData(order_index, '')
             else:
-                if not (VarType.typeLength(self.model().data(type_index)) == 2):
-                    self.model().setData(type_index, VarType.INT16.value)
+                if not (DispVarType.typeLength(self.model().data(type_index)) == 2):
+                    self.model().setData(type_index, DispVarType.INT16.value)
                 if not (self.model().data(order_index) in ['ab', 'ba', 'abcd', 'dcba', 'badc', 'cdab',
                                                            'no-swap', 'dword swap', 'word swap', 'byte swap', 'd-w swap', 'd-b swap', 'w-b swap', 'd-b swap']):          
                     self.model().setData(order_index, 'ab')
         
         # if user change type
         if index.column() == 3: 
-            if  selection == VarType.BOOL: 
+            if  selection == DispVarType.BOOL: 
                 if self.model().data(order_index) != '':                          
                     self.model().setData(order_index, '')
                 if not (self.model().data(block_index) in [ModbusBlock.COIL, ModbusBlock.I_DISC]):  
                     self.model().setData(block_index, ModbusBlock.COIL.value)
-            elif  selection in [VarType.INT16, VarType.UINT16]: 
+            elif  selection in [DispVarType.INT16, DispVarType.UINT16]: 
                 if not (self.model().data(order_index) in ['ab', 'ba']):          
                     self.model().setData(order_index, 'ab')
                 if not (self.model().data(block_index) in [ModbusBlock.H_REG, ModbusBlock.I_REG]):
                     self.model().setData(block_index, ModbusBlock.H_REG.value)
-            elif  selection in [VarType.INT32, VarType.UINT32, VarType.FLOAT]: 
+            elif  selection in [DispVarType.INT32, DispVarType.UINT32, DispVarType.FLOAT]: 
                 if not (self.model().data(order_index) in ['abcd', 'dcba', 'badc', 'cdab']):          
                     self.model().setData(order_index, 'abcd')
                 if not (self.model().data(block_index) in [ModbusBlock.H_REG, ModbusBlock.I_REG]):
